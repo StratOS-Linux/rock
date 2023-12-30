@@ -69,20 +69,7 @@ Example execution:
     Are you sure? (${BGreen}y${NC}/${BRed}N${NC})
     [...]
 
-${c1}       .;:;,.  .:       
-${c1}    'coooooooo:oo.';.   
-${c1}  ,oooooooooooooooo    ;
-${c1} clllcccllloooooooo;c:'o
-${c1}.${c3};${c4}';:::::::::${c1}cclooooooo'
-${c3}''',${c4}::::::::::::::${c1}ccclc.
-${c3}.'''${c4};::::::::::${c2}l${c4}::::::: 
-${c3} ''''${c4},:::::::::${c2}kd${c4}.      
-${c3} .'''''${c4},;::${c2}ck:${c2}oW${c4};       
-${c3}   ''''''''${c2}kXOM.        
-${c3}     .,,:${c2}dXMK           
-${c3}       ${c2}:k
-
-$(basename "$0") 0.1.2
+$(basename "$0") 0.1.3
 A package manager wrapper for lugOS
 Developed by ZeStig <o0vckutt@duck.com> for lugOS."
 
@@ -130,21 +117,26 @@ function info_package() {
                 fi
                 ;;
             
-            "snap")
-                snap_name=$(snap list "$package_name" | awk '{print $1}' | tail -n 1)
-                echo -e "[${BRed}s${NC}]: ${BWhite}$package_name (${BRed}snap${NC})"
-                ;;
-            
-            "flatpak")
+	    "snap")
+		if [[ $(snap list "$package_name" | wc -l) -gt 1 ]]; then
+		    echo -e "[${BRed}s${NC}]: ${BWhite}$package_name (${BRed}snap${NC})"
+		    snap list "$package_name"
+		fi
+		;;
+
+	    "flatpak")
                 echo -e "[${BCyan}f${NC}]: ${BWhite}$(flatpak list --app --columns=application,ref | grep -i $package_name | awk '{print $1}') (${BCyan}flatpak${NC})"
 		echo
 		flatpak info `flatpak list --app --columns=application,ref | grep -i $package_name | awk '{print $1}'` 
                 ;;
             
             "apt")
-                echo -e "[${BGreen}a${NC}]: ${BWhite}$package_name (${BGreen}apt${NC})"
-                ;;
-        esac
+		if apt list --installed 2>/dev/null | grep -q "^$package_name/"; then
+		    echo -e "[${BGreen}a${NC}]: ${BWhite}$package_name (${BGreen}apt${NC})"
+		    apt show "$package_name"
+		fi
+		;;
+	esac
     done
 }
 
@@ -200,6 +192,13 @@ function search_apt() {
     else
         local contents=("$(apt-cache search "$*" | awk '{print $1}')")
     fi
+    for package in $contents; do
+	if apt list --installed 2>/dev/null | grep -q "^$package/"; then
+	    installed_packages+=("${BWhite}$package${NC}")
+	else
+	    installed_packages+=("$package")
+	fi
+    done
     if [[ -n $contents ]]; then
         echo -e "${contents[@]}"
     else
@@ -415,6 +414,9 @@ if [[ -n $UPDATE ]]; then
     if command -v snap &> /dev/null; then
         sudo snap refresh
     fi
+    if [[ `which apt` ]]; then
+	sudo apt -y update && sudo apt upgrade
+    fi
     exit 0
 fi
 
@@ -452,6 +454,25 @@ if [[ -n $CLEANUP ]]; then
             echo -e "Nothing for snap to clean."
         fi
     fi
+    if command -v apt &> /dev/null; then
+	if [[ -n $PROMPTLESS ]]; then
+	    apt-get autoremove --purge -y
+	    apt-get clean -y
+	else
+	    echo -ne $"Attempting to remove unused packages. Continue? (${BGreen}y${NC}/${BRed}N${NC}) "
+	    read -ra read_update
+	    echo -ne "${NC}"
+	    case "${read_update[0]}" in
+		Y* | y*)
+		    sudo apt-get autoremove --purge
+		    sudo apt-get clean
+		    ;;
+		*)
+		    exit 1
+		    ;;
+	    esac
+	fi
+    fi
     exit 0
 fi
 
@@ -469,7 +490,7 @@ if [[ -z $REMOVE ]]; then
 	pacman_search_list=($(search_pacman $*))
 	clearscr
     fi
-    if command -v apt &> /dev/null; then
+    if [[ `which apt` ]]; then
 	msg $"Searching apt…"
 	apt_search_list=($(search_apt $*))
 	clearscr
@@ -547,40 +568,48 @@ if [[ -n $INSTALL ]]; then
 
 elif [[ -n $REMOVE ]]; then
     if [[ -n $* ]]; then
-	for package_name in $*; do
-	    display_installed_sources "$package_name"
-	    echo -ne "Select which package to remove [${BOrange}p${NC}/${BCyan}f${NC}/${BYellow}y${NC}]: ${BWhite}"
-	    read -r selected_source
+        for package_name in $*; do
+            display_installed_sources "$package_name"
+            echo -ne "Select which package to remove [${BOrange}p${NC}/${BCyan}f${NC}/${BYellow}y${NC}/${BGreen}a${NC}/${BRed}s${NC}]: ${BWhite}"
+            read -r selected_source
 
             case "$selected_source" in
-		"p")
+                "p")
                     # Remove the Pacman package
                     sudo pacman -Rns "$package_name" --noconfirm
                     ;;
-		"f")
+                "f")
                     # Remove the Flatpak package
                     flatpak uninstall "$package_name" -y
                     ;;
-		"y")
+                "y")
                     # Remove the AUR package
                     yay -Rns "$package_name" --noconfirm
                     ;;
-		"")
+                "a")
+                    # Remove the APT package
+                    sudo apt-get remove --purge "$package_name" -y
+                    ;;
+                "s")
+                    # Remove the Snap package
+                    sudo snap remove "$package_name"
+                    ;;
+                "")
                     echo "Invalid input. Exiting."
                     exit 1
                     ;;
-		*)
+                *)
                     echo "Invalid selection. Exiting."
                     exit 1
                     ;;
             esac
-	done
+        done
     else
-	echo "Please provide at least one package name to remove."
-	exit 1
+        echo "Please provide at least one package name to remove."
+        exit 1
     fi
 
-  exit 0
+    exit 0
 fi
 read -ra entered_input
 echo -ne "${NC}"
