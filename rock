@@ -71,7 +71,7 @@ Example execution:
 
 $(basename "$0") 0.1.3
 A package manager wrapper for lugOS
-Developed by ZeStig <o0vckutt@duck.com> for lugOS."
+Developed by ZeStig <o0vckutt@duck.com> for S."
 
 function msg() {
     local input="$*"
