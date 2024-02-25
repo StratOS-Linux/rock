@@ -71,7 +71,7 @@ Example execution:
 
 $(basename "$0") 0.1.3
 A package manager wrapper for StratOS
-Developed by ZeStig <o0vckutt@duck.com> for S."
+Developed by ZeStig <o0vckutt@duck.com> for StratOS"
 
 function msg() {
     local input="$*"
